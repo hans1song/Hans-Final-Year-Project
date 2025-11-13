@@ -1,0 +1,8 @@
+.vscode-test
+.vscode-test-compile
+
+node_modules/
+out/
+src/
+
+*.vsix

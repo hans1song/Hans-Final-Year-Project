@@ -1,0 +1,95 @@
+{
+  "name": "intellitesting",
+  "displayName": "IntelliTesting",
+  "description": "AI-driven unit test generation, execution, and validation with a zero-interruption workflow.",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.83.0"
+  },
+  "categories": [
+    "Testing",
+    "AI",
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:extension.generateUnitTests"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "extension.generateUnitTests",
+        "title": "Generate Unit Tests",
+        "category": "IntelliTesting"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "when": "editorHasSelection",
+          "submenu": "intellitesting.submenu",
+          "group": "navigation@1"
+        }
+      ],
+      "intellitesting.submenu": [
+        {
+          "command": "extension.generateUnitTests",
+          "group": "1_generate"
+        }
+      ]
+    },
+    "submenus": [
+      {
+        "id": "intellitesting.submenu",
+        "label": "IntelliTesting"
+      }
+    ],
+    "configuration": {
+      "title": "IntelliTesting",
+      "properties": {
+        "intellitesting.backendUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1:8000",
+          "description": "Base URL of the AI backend API (e.g., http://127.0.0.1:8000). The '/generate_tests' path will be appended automatically."
+        },
+        "intellitesting.testExecutionCommand": {
+          "type": "string",
+          "default": "npm test",
+          "description": "The command line to execute tests (e.g., 'pytest', 'mvn test', 'npm test')."
+        },
+        "intellitesting.projectTestPath": {
+          "type": "string",
+          "default": "src/tests",
+          "description": "Default path where the generated test files will be saved."
+        },
+        "intellitesting.testFramework": {
+          "type": "string",
+          "default": "junit",
+          "description": "The testing framework to use (e.g., 'pytest', 'jest', 'mocha'). Set to 'auto' for automatic detection."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts"
+  },
+    "dependencies": {
+        "node-fetch": "^2.6.7"
+    },
+    "devDependencies": {
+        "@types/vscode": "^1.83.0",
+        "@types/mocha": "^10.0.3",
+        "@types/node": "18.x",
+        "@types/node-fetch": "^2.6.4",
+        "@typescript-eslint/eslint-plugin": "^6.9.0",
+        "@typescript-eslint/parser": "^6.9.0",
+        "eslint": "^8.52.0",
+        "glob": "^10.3.10",
+        "mocha": "^10.2.0",
+        "typescript": "^5.2.2",
+        "@vscode/test-electron": "^2.3.6"
+    }
+}
