@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>Period.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">sd4v_project</a> &gt; <a href="index.source.html" class="el_package">com.cm</a> &gt; <span class="el_source">Period.java</span></div><h1>Period.java</h1><pre class="source lang-java linenums">package com.cm;
+
+import java.util.List;
+
+public class Period {
+     private int startHour;
+     private int endHour;
+
+<span class="nc" id="L9">    public Period(int start, int end) {</span>
+<span class="nc bnc" id="L10" title="All 2 branches missed.">        if (start &gt;= end) {</span>
+<span class="nc" id="L11">            throw new IllegalArgumentException(&quot;start of period cannot be later or equal to end of period&quot;);</span>
+        }
+<span class="nc bnc" id="L13" title="All 6 branches missed.">        if (start &lt; 0 || start &gt;= 24 || end &gt; 24) {</span>
+<span class="nc" id="L14">            throw new IllegalArgumentException(&quot;start of period and end of period must be between 0 and 24&quot;);</span>
+        }
+<span class="nc" id="L16">        this.startHour = start;</span>
+<span class="nc" id="L17">        this.endHour = end;</span>
+<span class="nc" id="L18">    }</span>
+
+    /**
+     * checks if a given hour is within the period
+     * @param hour the start of the hour to check
+     * @return true if the hour is within the period
+     */
+    private Boolean isIn(int hour) {
+<span class="nc bnc" id="L26" title="All 4 branches missed.">        return hour &gt;= this.startHour &amp;&amp; hour &lt; this.endHour;</span>
+    }
+
+    private static Boolean isIn(int hour, List&lt;Period&gt; list) {
+<span class="nc" id="L30">        Boolean isIn = false;</span>
+<span class="nc" id="L31">        int i = 0;</span>
+<span class="nc bnc" id="L32" title="All 4 branches missed.">        while (i &lt; list.size() &amp;&amp; !isIn) {</span>
+<span class="nc" id="L33">            isIn = list.get(i).isIn(hour);</span>
+<span class="nc" id="L34">            i++;</span>
+        }
+<span class="nc" id="L36">        return isIn;</span>
+    }
+
+    /**
+     * The duration of a period
+     * @return the number of whole hours a this period covers
+     */
+    public int duration() {
+<span class="nc" id="L44">        return this.endHour - this.startHour;</span>
+    }
+
+    /**
+     * Returns the numbers of hours this period is included in the list
+     * @param list the list of periods to check
+     * @return the number of full hours covered by this period
+     */
+    public int occurences(List&lt;Period&gt; list) {
+<span class="nc" id="L53">        int occurences = 0;</span>
+<span class="nc bnc" id="L54" title="All 2 branches missed.">        for (int hour = this.startHour; hour &lt; this.endHour; hour++) {</span>
+<span class="nc bnc" id="L55" title="All 2 branches missed.">            if (isIn(hour, list)) {</span>
+<span class="nc" id="L56">                occurences++;</span>
+            }
+        }
+<span class="nc" id="L59">        return occurences;</span>
+    }
+
+    public boolean overlaps(Period period) {
+<span class="nc bnc" id="L63" title="All 2 branches missed.">        if (period == null) {</span>
+<span class="nc" id="L64">            throw new IllegalArgumentException(&quot;period cannot be null&quot;);</span>
+        }
+<span class="nc bnc" id="L66" title="All 4 branches missed.">        return this.endHour&gt;period.startHour &amp;&amp; this.startHour&lt;period.endHour;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.11.202310140853</span></div></body></html>
