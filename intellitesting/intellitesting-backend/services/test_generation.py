@@ -1,6 +1,7 @@
 from services.agent_service import app
 from schemas import SelectionRange
 from langchain_core.messages import HumanMessage, AIMessage
+from core.languages.factory import LanguageFactory
 
 class TestGenerationService:
     @staticmethod
@@ -13,36 +14,49 @@ class TestGenerationService:
         configuration: dict,
         file_path: str = None,
         instruction: str = None,
+        specification: str = None,
         chat_history: list = None
     ):
-        # Construct the System Prompt (as a HumanMessage for Gemini compatibility)
-        # Based on Research Document strategies: Intent Inference, Logic Analysis, Conflict Resolution
+        # 1. Get Language Strategy
+        try:
+            strategy = LanguageFactory.get_strategy(language)
+        except ValueError as e:
+            return {"error": str(e)}
+
+        # 2. Build Prompt using Strategy
+        spec_text = f"SPECIFICATION / REQUIREMENTS (THE SOURCE OF TRUTH):\n{specification}\n" if specification else "No external specification provided. Infer intent from code/docstrings."
+        
+        lang_specific_prompt = strategy.get_test_prompt_template()
+
         initial_prompt = f"""
-        You are an expert Test Automation Agent for {language} using {framework}.
+        {lang_specific_prompt}
         
         GOAL: Generate a comprehensive, passing unit test suite for the 'Selected Code'.
         
-        METHODOLOGY (Strictly Follow):
-        1.  **Intent Inference (Heuristics):** Analyze function/class names and docstrings to infer the *intended* behavior.
-        2.  **Logic Analysis:** Analyze the actual code execution paths, conditions, and state changes.
-        3.  **Dependency Analysis:** If the code imports other local modules, use the `read_file` tool to inspect them.
-            - Current File Path: {file_path or "(Unknown)"}
-            - Context: You are in a backend environment. Paths are relative to the project root.
-        4.  **Conflict Resolution:** If the Actual Behavior contradicts the Intended Behavior, PRIORITIZE THE INTENDED BEHAVIOR.
-        5.  **Test Generation Strategy:**
-            - Happy Path, Edge Cases, State Exploration.
-            - Use `analyze_source_code` to understand the class structure.
+        INPUTS:
+        1. SPECIFICATION (Oracle): The absolute truth about how the code *should* behave.
+        2. SOURCE CODE (Implementation): The current code to be tested.
 
+        {spec_text}
+
+        METHODOLOGY (Strictly Follow):
+        1.  **Requirement Analysis:** Read the SPECIFICATION first. Design test cases (Inputs -> Expected Outputs) based ONLY on the spec.
+        2.  **Code Analysis:** Analyze the 'Selected Code' to understand the implementation.
+        3.  **Conflict Resolution:** 
+            - If the Code contradicts the Specification, the Code is WRONG. Generate a test case that expects the correct behavior (from Spec) which will fail (Red Test), and add a comment explaining the bug.
+            - If the Code handles cases not mentioned in the Spec, include them but prioritize Spec-defined behavior.
+        4.  **Dependency Analysis:** Use `read_file` to inspect imports if necessary.
+        
         EXECUTION PLAN:
-        1. **Analyze**: Use `analyze_source_code`. If dependencies exist, use `read_file`.
-        2. **Plan**: Outline your test cases.
+        1. **Analyze**: Understand Spec and Code.
+        2. **Plan**: Outline test cases based on Spec.
         3. **Code**: Write the test code.
         4. **Verify**: Call `run_unit_tests`.
-        5. **Refine**: If tests fail, ANALYZE the error, FIX the test, and RETRY.
+        5. **Refine**: Fix tests if they fail due to bad test code. If they fail due to buggy source code (and you are sure based on Spec), keep the failing test and document it.
         6. **Finalize**: Output the CLEAN test code.
 
         Note: The current source code path is src.main. The generated test code file should begin with `package src.test;` and you need to import objects from the source code, such as `import src.main.Calculator;`.
-
+        
         Selected Code:
         ```
         {selected_code}
@@ -96,7 +110,7 @@ class TestGenerationService:
         # Clean up code (Markdown removal)
         generated_code = TestGenerationService._clean_code(generated_code)
         
-        suggested_path = TestGenerationService._get_suggested_path(language, file_path)
+        suggested_path = strategy.get_suggested_test_path(file_path)
         
         return {
             "test_code": generated_code,
@@ -115,59 +129,3 @@ class TestGenerationService:
                 lines = lines[:-1]
             code = "\n".join(lines)
         return code.strip()
-
-    @staticmethod
-    def _get_suggested_path(language: str, file_path: str = None) -> str:
-        """
-        Determines the suggested path for the generated test file based on the source file path.
-        """
-        if not file_path:
-             if language == "java":
-                 return "src/test/java/com/example/generated/TestGenerated.java"
-             elif language == "python":
-                 return "tests/test_generated.py"
-             return "tests/generated_test.txt"
-
-        import os
-
-        # Normalize path separators
-        file_path = file_path.replace("\\", "/")
-        
-        if language == "python":
-            # Strategy: Place in 'tests/' directory, mirroring structure or flattening
-            # e.g., src/utils.py -> tests/test_utils.py
-            # e.g., app/services/user.py -> tests/app/services/test_user.py
-            
-            parts = file_path.split("/")
-            filename = parts[-1]
-            
-            # Python convention: prepend 'test_'
-            test_filename = f"test_{filename}"
-            
-            # Try to mirror directory structure under 'tests/'
-            # Remove top-level 'src' if present to avoid 'tests/src/...'
-            if parts[0] == "src":
-                dir_parts = parts[1:-1]
-            else:
-                dir_parts = parts[:-1]
-                
-            return f"tests/{'/'.join(dir_parts)}/{test_filename}".replace("//", "/")
-
-        elif language == "java":
-            # Strategy: Mirror src/main/java -> src/test/java
-            # e.g., src/main/java/com/app/Utils.java -> src/test/java/com/app/UtilsTest.java
-            
-            if "src/main" in file_path:
-                test_path = file_path.replace("src/main", "src/test")
-            else:
-                # If structure isn't standard, just put in src/test/java root
-                test_path = f"src/test/{file_path}"
-                
-            # Java convention: append 'Test'
-            if test_path.endswith(".java"):
-                test_path = test_path[:-5] + "Test.java"
-                
-            return test_path
-
-        # Default fallback
-        return f"tests/test_{os.path.basename(file_path)}"

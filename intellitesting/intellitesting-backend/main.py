@@ -23,6 +23,7 @@ async def generate_tests(request: TestGenerationRequest):
             configuration=request.configuration,
             file_path=request.file_path,
             instruction=request.instruction,
+            specification=request.specification,
             chat_history=request.chat_history
         )
         

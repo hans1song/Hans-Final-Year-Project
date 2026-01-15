@@ -18,6 +18,7 @@ class TestGenerationRequest(BaseModel):
     configuration: Dict[str, Any]
     framework: str
     instruction: Optional[str] = None
+    specification: Optional[str] = None
     chat_history: Optional[List[Dict[str, str]]] = []
 
 class TestGenerationResponse(BaseModel):

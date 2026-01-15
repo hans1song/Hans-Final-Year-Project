@@ -38,6 +38,7 @@ exports.deactivate = deactivate;
 const vscode = __importStar(require("vscode"));
 const path = __importStar(require("path"));
 const fs = __importStar(require("fs"));
+const RunnerFactory_1 = require("./runners/RunnerFactory");
 // A map to hold our webview panels
 const panels = new Map();
 function activate(context) {
@@ -88,8 +89,9 @@ function activate(context) {
             switch (message.command) {
                 case 'userMessage':
                     // User typed an instruction
-                    sessionContext.chatHistory.push({ role: 'user', content: message.text });
-                    handleBackendCall(panel, backendUrl, sessionContext, testFramework, message.text);
+                    const userContent = (message.specification ? `Spec: ${message.specification}\n` : '') + (message.text ? `Instruction: ${message.text}` : '');
+                    sessionContext.chatHistory.push({ role: 'user', content: userContent });
+                    handleBackendCall(panel, backendUrl, sessionContext, testFramework, message.text, message.specification);
                     return;
                 case 'applyTest':
                     if (message.code && message.path) {
@@ -97,9 +99,9 @@ function activate(context) {
                     }
                     return;
                 case 'runTest':
-                    // Execute test via backend
+                    // Execute test locally
                     if (message.code) {
-                        handleTestExecution(panel, backendUrl, message.code, message.language || sessionContext.languageId);
+                        handleTestExecution(panel, message.code, message.language || sessionContext.languageId, sessionContext.workspaceFolder);
                     }
                     return;
             }
@@ -107,7 +109,7 @@ function activate(context) {
     });
     context.subscriptions.push(disposable);
 }
-async function handleBackendCall(panel, backendUrl, context, framework, instruction) {
+async function handleBackendCall(panel, backendUrl, context, framework, instruction, specification) {
     try {
         panel.webview.postMessage({ command: 'setLoading', value: true });
         const requestBody = {
@@ -119,6 +121,7 @@ async function handleBackendCall(panel, backendUrl, context, framework, instruct
             configuration: {},
             framework: framework,
             instruction: instruction,
+            specification: specification,
             chat_history: context.chatHistory
         };
         const response = await callAiBackend(backendUrl, requestBody);
@@ -146,23 +149,15 @@ async function handleBackendCall(panel, backendUrl, context, framework, instruct
         panel.webview.postMessage({ command: 'setLoading', value: false });
     }
 }
-async function handleTestExecution(panel, backendUrl, testCode, language) {
+async function handleTestExecution(panel, testCode, language, workspaceRoot) {
     try {
-        panel.webview.postMessage({ command: 'addMessage', role: 'system', text: 'Running tests on backend...' });
-        panel.webview.postMessage({ command: 'setLoading', value: true });
-        const requestBody = {
-            test_code: testCode,
-            language: language
-        };
-        const response = await fetch(`${backendUrl}/run_tests`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(requestBody)
-        });
-        if (!response.ok) {
-            throw new Error(`Backend Error: ${response.statusText}`);
+        if (!RunnerFactory_1.RunnerFactory.isSupported(language)) {
+            throw new Error(`Execution for language '${language}' is not currently supported.`);
         }
-        const result = await response.json();
+        panel.webview.postMessage({ command: 'addMessage', role: 'system', text: `Running ${language} tests locally...` });
+        panel.webview.postMessage({ command: 'setLoading', value: true });
+        const runner = RunnerFactory_1.RunnerFactory.getRunner(language);
+        const result = await runner.run(testCode, workspaceRoot);
         if (result.passed) {
             panel.webview.postMessage({
                 command: 'addMessage',
@@ -172,8 +167,6 @@ async function handleTestExecution(panel, backendUrl, testCode, language) {
         }
         else {
             let details = "";
-            if (result.error_message)
-                details += `System Error: ${result.error_message}\n`;
             if (result.stderr)
                 details += `Stderr:\n${result.stderr}\n`;
             if (result.stdout)
@@ -368,15 +361,19 @@ function getWebviewContent() {
             <div class="message system">Ready to generate tests.</div>
         </div>
         <div id="loading">Thinking...</div>
-        <div id="input-area">
-            <textarea id="instruction-input" rows="2" placeholder="Refine tests (e.g., 'Add mock for database')..."></textarea>
-            <button id="send-btn">Send</button>
+        <div id="input-area" style="flex-direction: column; gap: 10px;">
+            <textarea id="spec-input" rows="3" placeholder="Paste Requirements / Specification (Optional)..." style="width: 100%; box-sizing: border-box; background-color: #3c3c3c; color: white; border: 1px solid #333; border-radius: 4px; padding: 10px; resize: none; font-family: inherit;"></textarea>
+            <div style="display: flex; gap: 10px; width: 100%;">
+                <textarea id="instruction-input" rows="2" placeholder="Instruction (e.g. 'Add more edge cases')..."></textarea>
+                <button id="send-btn">Send</button>
+            </div>
         </div>
 
         <script>
             const vscode = acquireVsCodeApi();
             const chatContainer = document.getElementById('chat-container');
             const inputField = document.getElementById('instruction-input');
+            const specField = document.getElementById('spec-input');
             const sendBtn = document.getElementById('send-btn');
             const loading = document.getElementById('loading');
 
@@ -399,7 +396,7 @@ function getWebviewContent() {
                     applyBtn.onclick = () => vscode.postMessage({ command: 'applyTest', code: text, path: suggestedPath });
                     
                     const testBtn = document.createElement('button');
-                    testBtn.textContent = 'Run Test (Backend)';
+                    testBtn.textContent = 'Run Test (Local)';
                     testBtn.onclick = () => vscode.postMessage({ command: 'runTest', code: text, language: language });
 
                     if (suggestedPath) {
@@ -424,10 +421,18 @@ function getWebviewContent() {
 
             sendBtn.addEventListener('click', () => {
                 const text = inputField.value.trim();
-                if (text) {
-                    addMessage('user', text);
-                    vscode.postMessage({ command: 'userMessage', text: text });
+                const spec = specField.value.trim();
+                
+                if (text || spec) {
+                    let displayMsg = "";
+                    if (spec) displayMsg += "<strong>Spec:</strong> " + spec + "<br/>";
+                    if (text) displayMsg += "<strong>Instruction:</strong> " + text;
+                    
+                    addMessage('user', displayMsg);
+                    vscode.postMessage({ command: 'userMessage', text: text, specification: spec });
                     inputField.value = '';
+                    // Optionally keep spec? Clearing for now.
+                    // specField.value = ''; 
                 }
             });
             
