@@ -35,87 +35,59 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.JavaRunner = void 0;
 const fs = __importStar(require("fs"));
+const os = __importStar(require("os"));
 const path = __importStar(require("path"));
 const BaseRunner_1 = require("./BaseRunner");
 class JavaRunner extends BaseRunner_1.BaseRunner {
     async run(code, workspaceRoot) {
-        // 1. Extract class name to match filename
+        // 1. Extract class name
         const match = code.match(/class\s+(\w+)/);
         if (!match) {
             return { passed: false, stdout: "", stderr: "Could not find class name in Java code." };
         }
         const className = match[1];
-        // 2. Determine path based on package (if present)
-        let relativePath = `${className}.java`;
+        // 2. Extract package for running
         const packageMatch = code.match(/package\s+([\w.]+);/);
         const packageName = packageMatch ? packageMatch[1] : "";
-        if (packageName) {
-            const pkgPath = packageName.replace(/\./g, path.sep);
-            relativePath = path.join('src', 'test', 'java', pkgPath, `${className}.java`);
-        }
-        else {
-            // Fallback for simple projects or manual compilation
-            // If no package, putting it in src/test/java might be overkill if folder structure doesn't exist
-            // Let's check if src exists, otherwise just put in root or temp
-            if (fs.existsSync(path.join(workspaceRoot, 'src'))) {
-                relativePath = `src/test/java/${className}.java`;
-            }
-            else {
-                relativePath = `${className}.java`;
-            }
-        }
-        const absPath = path.join(workspaceRoot, relativePath);
-        // Backup existing file if any
-        let backupPath = null;
-        if (fs.existsSync(absPath)) {
-            backupPath = absPath + '.bak';
-            fs.copyFileSync(absPath, backupPath);
-        }
+        // 3. Create a totally isolated temp directory for this run
+        const runTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'intellitesting-run-'));
+        const tempFilePath = path.join(runTempDir, `${className}.java`);
         try {
-            // Ensure dir exists
-            fs.mkdirSync(path.dirname(absPath), { recursive: true });
-            fs.writeFileSync(absPath, code);
-            // Strategy 1: Maven
-            if (fs.existsSync(path.join(workspaceRoot, 'pom.xml'))) {
-                const cmd = `mvn test -Dtest=${className}`;
-                return await this.execCommand(cmd, workspaceRoot);
-            }
-            // Strategy 2: Manual javac + java (Fallback)
-            return await this.runManualJava(workspaceRoot, absPath, className, packageName);
+            // Write the test file to the temp dir
+            // Note: If the test has a package declaration, we ideally need to match the folder structure inside temp dir
+            // OR we just compile it directly. javac doesn't care about file path matching package for input files, 
+            // only for finding dependencies.
+            // But when running 'java', it matters for the classpath.
+            // Let's write it flat first.
+            fs.writeFileSync(tempFilePath, code);
+            // Strategy 1: Maven (Skip for now to ensure isolation, or strictly run test phase? 
+            // Maven requires the file to be in src/test/java. So if we use Maven, we MUST write to src.
+            // But the user wants NO pollution. So for "Run (Local)", let's prefer manual javac execution in temp.
+            // If the user relies on Maven dependencies, this might fail unless we parse pom.xml.
+            // BUT, for the demo "Calculator", manual is fine.
+            // Strategy 2: Manual javac + java (Isolated)
+            return await this.runManualJavaIsolated(workspaceRoot, tempFilePath, className, packageName, runTempDir);
         }
         catch (error) {
             return { passed: false, stdout: "", stderr: error.message };
         }
         finally {
-            // Restore backup if it existed
-            if (backupPath) {
-                // If the user wants to keep the NEW file, we shouldn't restore the old one blindly.
-                // But for now, let's assume 'Run' is non-destructive to existing files UNLESS we explicitly want to save.
-                // Wait, the user requirement is "file automatically saved".
-                // So if we created a new file, we KEEP it.
-                // If we overwrote an existing one, we might want to keep the new one too?
-                // Let's remove the backup (commit change) instead of restoring it.
-                fs.unlinkSync(backupPath);
-            }
-            // Clean up compiled .class files
+            // Cleanup the entire temp run directory
             try {
-                const classFile = absPath.replace('.java', '.class');
-                if (fs.existsSync(classFile))
-                    fs.unlinkSync(classFile);
+                fs.rmSync(runTempDir, { recursive: true, force: true });
             }
-            catch (e) { }
+            catch (e) {
+                console.error("Failed to cleanup temp dir:", e);
+            }
         }
     }
-    async runManualJava(root, sourcePath, className, packageName) {
-        // ... (Classpath logic remains the same) ...
+    async runManualJavaIsolated(root, sourcePath, className, packageName, tempRunDir) {
         // Construct Classpath
-        // 1. Current dir (.)
-        // 2. Environment CLASSPATH
-        // 3. Optional 'lib' folder in workspace
         let classpath = ".";
         if (process.env.CLASSPATH) {
             classpath += path.delimiter + process.env.CLASSPATH;
         }
+        // Add project libs
         const libPath = path.join(root, 'lib');
         if (fs.existsSync(libPath)) {
             const jars = fs.readdirSync(libPath).filter(f => f.endsWith('.jar'));
@@ -123,7 +95,7 @@ class JavaRunner extends BaseRunner_1.BaseRunner {
                 classpath += path.delimiter + path.join(libPath, jar);
             }
         }
-        // Add source root to classpath so package imports work
+        // Add Project Source to Classpath (so Test can see Source)
         const srcMain = path.join(root, 'src', 'main', 'java');
         if (fs.existsSync(srcMain)) {
             classpath += path.delimiter + srcMain;
@@ -132,40 +104,25 @@ class JavaRunner extends BaseRunner_1.BaseRunner {
             classpath += path.delimiter + root;
         }
         // 1. Compile
-        const compileCmd = `javac -cp "${classpath}" "${sourcePath}"`;
+        // Output .class files to the SAME temp dir
+        const compileCmd = `javac -d "${tempRunDir}" -cp "${classpath}" "${sourcePath}"`;
         const compileRes = await this.execCommand(compileCmd, root);
         if (!compileRes.passed) {
             return {
                 passed: false,
                 stdout: compileRes.stdout,
-                stderr: `Compilation Failed:\n${compileRes.stderr}\n\nNote: For manual execution, ensure JUnit jars are in your CLASSPATH or a 'lib' folder.`
+                stderr: `Compilation Failed:\n${compileRes.stderr}\n\nNote: Ensure JUnit jars are in 'lib' or CLASSPATH.`
             };
         }
         // 2. Run
         let runClass = className;
-        let runCwd = root;
         if (packageName) {
             runClass = `${packageName}.${className}`;
-            const srcTest = path.join(root, 'src', 'test', 'java');
-            if (fs.existsSync(srcTest)) {
-                classpath += path.delimiter + srcTest;
-            }
         }
-        else {
-            classpath += path.delimiter + path.dirname(sourcePath);
-        }
-        const runCmd = `java -cp "${classpath}" org.junit.runner.JUnitCore ${runClass}`;
-        const result = await this.execCommand(runCmd, runCwd);
-        // Cleanup .class files generated by javac
-        // javac puts .class in the same dir as .java by default
-        const classPath = sourcePath.replace('.java', '.class');
-        if (fs.existsSync(classPath)) {
-            try {
-                fs.unlinkSync(classPath);
-            }
-            catch (e) { }
-        }
-        return result;
+        // Add the temp dir (where we compiled the test) to classpath
+        const runClasspath = tempRunDir + path.delimiter + classpath;
+        const runCmd = `java -cp "${runClasspath}" org.junit.runner.JUnitCore ${runClass}`;
+        return await this.execCommand(runCmd, root);
     }
 }
 exports.JavaRunner = JavaRunner;

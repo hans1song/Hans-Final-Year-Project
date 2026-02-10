@@ -26,63 +26,48 @@ class JavaStrategy(LanguageStrategy):
         
         KEY GUIDELINES FOR JAVA/JUNIT:
         1. Class Naming: SourceClass + "Test" (e.g. `CalculatorTest`).
-        2. Package: Must match the source package structure (e.g. `package com.example.test;`).
-        3. Imports: 
-           - `import org.junit.Test;`
-           - `import static org.junit.Assert.*;`
-           - Import the source class under test.
-        4. Annotations: Use ONLY `@Test` for test methods. NEVER use file paths, `@intellitesting`, or other random strings as annotations.
-        5. Structure:
+        2. Package & Imports: 
+           - **CRITICAL**: Strict adherence to the `PROJECT STRUCTURE CONVENTION` provided in the INPUTS section is required.
+           - If told to use a specific package or import, you MUST do so.
+        3. Annotations: 
+           - Use **ONLY** `@Test` for test methods.
+           - **CRITICAL**: Do NOT use file paths (e.g. `@.../ITestRunner.js`) as annotations.
+        4. Structure:
            ```java
-           package ...;
+           // Follow package convention from input
            
            import org.junit.Test;
            import static org.junit.Assert.*;
-           import ...;
+           // Follow import convention from input
            
            public class CalculatorTest {
                @Test
-               public void testAdd() {
-                   // ...
-               }
+               public void testMethod() { ... }
            }
            ```
-        6. Mocking: If complex dependencies exist, suggest using Mockito.
         """
 
     def get_suggested_test_path(self, source_file_path: str) -> str:
         if not source_file_path:
             return "src/test/java/TestGenerated.java"
             
-        # Normalize to forward slashes
+        # Normalize
         file_path = source_file_path.replace("\\", "/")
+        directory = os.path.dirname(file_path)
+        filename = os.path.basename(file_path)
         
-        # If absolute path, try to strip everything before 'src' if present
-        if "/src/" in file_path:
-            file_path = "src/" + file_path.split("/src/", 1)[1]
+        test_filename = filename
+        if test_filename.endswith(".java"):
+            if not test_filename.endswith("Test.java"):
+                test_filename = test_filename[:-5] + "Test.java"
+        else:
+            test_filename += "Test.java"
             
-        # Logic to map src/main/java -> src/test/java
+        # Flexible Path Mapping
         if "src/main/java" in file_path:
-            test_path = file_path.replace("src/main/java", "src/test/java")
+            return file_path.replace("src/main/java", "src/test/java").replace(filename, test_filename)
         elif "src/main" in file_path:
-            test_path = file_path.replace("src/main", "src/test")
-        elif file_path.startswith("src/"):
-            # If it's just src/Something.java -> src/test/SomethingTest.java ?
-            # Or src/test/Something.java -> src/test/SomethingTest.java
-            if not file_path.startswith("src/test/"):
-                test_path = file_path.replace("src/", "src/test/")
-            else:
-                test_path = file_path
-        else:
-            # Fallback: just put it in a tests folder
-            test_path = f"src/test/java/{file_path}"
+            return file_path.replace("src/main", "src/test").replace(filename, test_filename)
             
-        # Handle filename
-        if test_path.endswith(".java"):
-            # Check if it already ends in Test.java
-            if not test_path.endswith("Test.java"):
-                test_path = test_path[:-5] + "Test.java"
-        else:
-            test_path += "Test.java"
-            
-        return test_path
+        # Fallback: create in src/test/java at root if unable to determine
+        return f"src/test/java/{test_filename}"

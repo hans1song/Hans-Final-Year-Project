@@ -36,7 +36,8 @@ async def generate_tests(request: TestGenerationRequest):
         return TestGenerationResponse(
             status="success",
             test_code=result["test_code"],
-            suggested_file_path=result["suggested_file_path"]
+            suggested_file_path=result["suggested_file_path"],
+            interactive_questions=result.get("interactive_questions")
         )
 
     except Exception as e:

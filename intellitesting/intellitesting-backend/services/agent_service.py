@@ -1,7 +1,7 @@
 import os
 import operator
 import json
-from typing import TypedDict, Annotated, List, Union
+from typing import TypedDict, Annotated, List, Union, Optional
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, BaseMessage, ToolMessage
@@ -13,6 +13,26 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from langchain_core.tools import tool
+from schemas import AgentOutput
+
+@tool
+def submit_final_result(
+    explanation: str, 
+    interactive_questions: List[str], 
+    test_code: str
+):
+    """
+    Submits the final test generation result.
+    Call this tool ONLY when you have successfully generated a comprehensive test suite.
+    
+    Args:
+        explanation: A brief Markdown explanation of the strategy.
+        interactive_questions: Questions for the user about edge cases (if any).
+        test_code: The final source code of the test file.
+    """
+    return "Result submitted successfully."
+
 # 1. Define Agent State
 class AgentState(TypedDict):
     messages: Annotated[List[BaseMessage], operator.add]
@@ -21,6 +41,7 @@ class AgentState(TypedDict):
     language: str
     framework: str
     final_test_code: str
+    interactive_questions: Optional[List[str]]
     iterations: int
 
 # 2. Setup LLM and Tools
@@ -31,7 +52,7 @@ llm = ChatGoogleGenerativeAI(
     temperature=0
 )
 
-tools = [analyze_source_code, run_unit_tests, read_file]
+tools = [analyze_source_code, run_unit_tests, read_file, submit_final_result]
 llm_with_tools = llm.bind_tools(tools)
 
 # 3. Define Nodes
@@ -44,8 +65,14 @@ def agent_node(state: AgentState):
 
     # Invoke LLM
     try:
+        print("--- Invoking LLM ---")
         response = llm_with_tools.invoke(messages)
+        print(f"DEBUG: LLM Response Type: {type(response)}")
+        print(f"DEBUG: LLM Tool Calls: {response.tool_calls}")
+        if response.content:
+            print(f"DEBUG: LLM Content (Truncated): {str(response.content)[:100]}...")
     except Exception as e:
+        print(f"ERROR: LLM Invocation Failed: {e}")
         # Fallback if LLM fails
         response = AIMessage(content=f"Error invoking LLM: {str(e)}")
     
@@ -66,27 +93,37 @@ def tool_node_wrapper(state: AgentState):
     
     # Ensure the last message actually has tool calls
     if not hasattr(last_message, "tool_calls") or not last_message.tool_calls:
+        print("DEBUG: No tool calls in last message.")
         return {"messages": []}
 
     tool_calls = last_message.tool_calls
+    print(f"DEBUG: Processing {len(tool_calls)} tool calls...")
     outputs = []
     
     final_code_update = None
+    questions_update = None
     
     for tool_call in tool_calls:
         tool_name = tool_call["name"]
+        print(f"DEBUG: Executing Tool: {tool_name}")
         tool_args = tool_call["args"]
         
         result_content = ""
         
-        if tool_name == "run_unit_tests":
+        if tool_name == "submit_final_result":
+            final_code_update = tool_args.get("test_code")
+            questions_update = tool_args.get("interactive_questions", [])
+            result_content = "Submission accepted."
+            
+        elif tool_name == "run_unit_tests":
+            # ... (rest of run_unit_tests logic) ...
             # Capture the code being tested as a potential final candidate
             final_code_update = tool_args.get("test_code")
             
             # Execute tool
             try:
                 result = run_unit_tests.invoke(tool_args)
-                result_content = result # It's already a string (JSON)
+                result_content = result 
             except Exception as e:
                 result_content = json.dumps({"passed": False, "error_message": f"Tool execution failed: {str(e)}"})
             
@@ -116,6 +153,8 @@ def tool_node_wrapper(state: AgentState):
     update_dict = {"messages": outputs}
     if final_code_update:
         update_dict["final_test_code"] = final_code_update
+    if questions_update is not None:
+        update_dict["interactive_questions"] = questions_update
         
     return update_dict
 
@@ -126,9 +165,14 @@ def should_continue(state: AgentState):
     messages = state["messages"]
     last_message = messages[-1]
     
-    # If LLM didn't call tools, it's done
+    # If LLM didn't call tools, it's done (Fallback)
     if not hasattr(last_message, "tool_calls") or not last_message.tool_calls:
         return END
+
+    # If Submit tool was called, we are done
+    for tool_call in last_message.tool_calls:
+        if tool_call["name"] == "submit_final_result":
+            return END
 
     # Check for max iterations (Safety break)
     if state["iterations"] > 8:

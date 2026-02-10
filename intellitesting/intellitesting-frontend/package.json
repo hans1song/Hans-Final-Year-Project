@@ -20,10 +20,27 @@
       {
         "command": "extension.generateUnitTests",
         "title": "Generate Unit Tests",
-        "category": "IntelliTesting"
+        "category": "IntelliTesting",
+        "icon": "$(beaker)"
+      },
+      {
+        "command": "extension.showTestingChat",
+        "title": "Show Chat History",
+        "category": "IntelliTesting",
+        "icon": "$(comment-discussion)"
       }
     ],
     "menus": {
+      "editor/title": [
+        {
+          "command": "extension.showTestingChat",
+          "group": "navigation@1"
+        },
+        {
+          "command": "extension.generateUnitTests",
+          "group": "navigation@2"
+        }
+      ],
       "editor/context": [
         {
           "when": "editorHasSelection",
