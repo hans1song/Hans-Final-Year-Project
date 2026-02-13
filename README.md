@@ -27,7 +27,7 @@ IntelliTesting uses a **Hybrid Agentic Architecture**:
 1.  **Frontend (TypeScript):** A VS Code extension handling the Webview UI, file I/O, and local test execution.
 2.  **Backend (Python):** A FastAPI server running a LangGraph agent that interfaces with **Google Gemini 2.5**.
 
-![Architecture](Screenshot\Architecture.png)
+![Architecture](Screenshot/Architecture.png)
 
 ---
 
@@ -47,15 +47,15 @@ IntelliTesting uses a **Hybrid Agentic Architecture**:
 
 ### 1. Interactive Mode
 AI identifying ambiguities and asking clarifying questions.
-![Interactive Mode](Screenshot\Screenshot01.png)
+![Interactive Mode](Screenshot/Screenshot01.png)
 
 ### 2. Specification-Driven Generation
 Generating tests based on an uploaded Requirements document.
-![Spec Driven](Screenshot\Screenshot02.png)
+![Spec Driven](Screenshot/Screenshot02.png)
 
 ### 3. Local Execution & Results
 Running JUnit tests in the ephemeral sandbox.
-![Execution Results](Screenshot\Screenshot03.png)
+![Execution Results](Screenshot/Screenshot03.png)
 
 ---
 
