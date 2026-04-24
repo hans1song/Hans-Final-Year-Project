@@ -20,7 +20,8 @@ from schemas import AgentOutput
 def submit_final_result(
     explanation: str, 
     interactive_questions: List[str], 
-    test_code: str
+    imports_and_setup: str,
+    test_cases: List[dict]
 ):
     """
     Submits the final test generation result.
@@ -29,9 +30,26 @@ def submit_final_result(
     Args:
         explanation: A brief Markdown explanation of the strategy.
         interactive_questions: Questions for the user about edge cases (if any).
-        test_code: The final source code of the test file.
+        imports_and_setup: The required import statements and any setup/teardown methods.
+        test_cases: A list of dicts representing the generated independent test cases. Each dict must have 'id', 'intent', 'expected_behavior', and 'code' keys.
     """
     return "Result submitted successfully."
+
+@tool
+def submit_test_plan(
+    explanation: str,
+    plan_cases: List[dict]
+):
+    """
+    Submits a proposed test plan for user review when no specification is provided.
+    Call this tool ONLY when you are in Interactive Mode and have a test plan ready.
+    Do NOT generate code yet.
+    
+    Args:
+        explanation: A brief summary of the test plan.
+        plan_cases: A list of dicts, where each dict has 'scenario', 'inputs', and 'expected_output' keys.
+    """
+    return "Test plan submitted for user review."
 
 # 1. Define Agent State
 class AgentState(TypedDict):
@@ -41,200 +59,159 @@ class AgentState(TypedDict):
     language: str
     framework: str
     final_test_code: str
+    imports_and_setup: str
+    test_cases: List[dict]
+    proposed_plan: List[dict]
     interactive_questions: Optional[List[str]]
     iterations: int
 
 # 2. Setup LLM and Tools
-# Using gemini-1.5-flash for balanced speed and capability
-llm = ChatGoogleGenerativeAI(
-    model="gemini-2.5-flash",
-    google_api_key=os.getenv("GEMINI_API_KEY"),
-    temperature=0
-)
+tools = [analyze_source_code, run_unit_tests, read_file, submit_final_result, submit_test_plan]
 
-tools = [analyze_source_code, run_unit_tests, read_file, submit_final_result]
-llm_with_tools = llm.bind_tools(tools)
+# Cache for the default (server-key) app to avoid rebuilding every request
+_default_app = None
 
-# 3. Define Nodes
+def build_agent_app(api_key: str = None):
+    """Build a compiled LangGraph app, optionally with a user-provided API key."""
+    global _default_app
+    resolved_key = api_key or os.getenv("GEMINI_API_KEY")
 
-def agent_node(state: AgentState):
-    """
-    The brain of the agent. Decides to call a tool or return the final code.
-    """
-    messages = state["messages"]
+    # Return cached app if using the server's default key
+    if not api_key and _default_app is not None:
+        return _default_app
 
-    # Invoke LLM
-    try:
-        print("--- Invoking LLM ---")
-        response = llm_with_tools.invoke(messages)
-        print(f"DEBUG: LLM Response Type: {type(response)}")
-        print(f"DEBUG: LLM Tool Calls: {response.tool_calls}")
-        if response.content:
-            print(f"DEBUG: LLM Content (Truncated): {str(response.content)[:100]}...")
-    except Exception as e:
-        print(f"ERROR: LLM Invocation Failed: {e}")
-        # Fallback if LLM fails
-        response = AIMessage(content=f"Error invoking LLM: {str(e)}")
-    
-    # Update iteration count
-    iterations = state.get("iterations", 0) + 1
-    
-    return {
-        "messages": [response],
-        "iterations": iterations
-    }
+    llm = ChatGoogleGenerativeAI(
+        model="gemini-2.5-flash",
+        google_api_key=resolved_key,
+        temperature=0
+    )
+    llm_with_tools = llm.bind_tools(tools)
 
-def tool_node_wrapper(state: AgentState):
-    """
-    Wraps the standard ToolNode to inspect outputs for our logic.
-    """
-    messages = state["messages"]
-    last_message = messages[-1]
-    
-    # Ensure the last message actually has tool calls
-    if not hasattr(last_message, "tool_calls") or not last_message.tool_calls:
-        print("DEBUG: No tool calls in last message.")
-        return {"messages": []}
+    compiled = _compile_graph(llm_with_tools)
 
-    tool_calls = last_message.tool_calls
-    print(f"DEBUG: Processing {len(tool_calls)} tool calls...")
-    outputs = []
-    
-    final_code_update = None
-    questions_update = None
-    
-    for tool_call in tool_calls:
-        tool_name = tool_call["name"]
-        print(f"DEBUG: Executing Tool: {tool_name}")
-        tool_args = tool_call["args"]
-        
-        result_content = ""
-        
-        if tool_name == "submit_final_result":
-            final_code_update = tool_args.get("test_code")
-            questions_update = tool_args.get("interactive_questions", [])
-            result_content = "Submission accepted."
-            
-        elif tool_name == "run_unit_tests":
-            # ... (rest of run_unit_tests logic) ...
-            # Capture the code being tested as a potential final candidate
-            final_code_update = tool_args.get("test_code")
-            
-            # Execute tool
-            try:
-                result = run_unit_tests.invoke(tool_args)
-                result_content = result 
-            except Exception as e:
-                result_content = json.dumps({"passed": False, "error_message": f"Tool execution failed: {str(e)}"})
-            
-        elif tool_name == "analyze_source_code":
-            try:
-                result = analyze_source_code.invoke(tool_args)
-                result_content = result
-            except Exception as e:
-                result_content = f"Analysis failed: {str(e)}"
-        
-        elif tool_name == "read_file":
-            try:
-                result = read_file.invoke(tool_args)
-                result_content = result
-            except Exception as e:
-                result_content = f"Read file failed: {str(e)}"
-        
-        else:
-            result_content = f"Unknown tool: {tool_name}"
+    if not api_key:
+        _default_app = compiled
 
-        outputs.append(ToolMessage(
-            content=result_content,
-            name=tool_name, 
-            tool_call_id=tool_call["id"]
-        ))
+    return compiled
 
-    update_dict = {"messages": outputs}
-    if final_code_update:
-        update_dict["final_test_code"] = final_code_update
-    if questions_update is not None:
-        update_dict["interactive_questions"] = questions_update
-        
-    return update_dict
+def _compile_graph(llm_with_tools):
+    """Compile a LangGraph agent with the given LLM."""
 
-def should_continue(state: AgentState):
-    """
-    Decides whether to continue the loop or stop.
-    """
-    messages = state["messages"]
-    last_message = messages[-1]
-    
-    # If LLM didn't call tools, it's done (Fallback)
-    if not hasattr(last_message, "tool_calls") or not last_message.tool_calls:
-        return END
+    def agent_node(state: AgentState):
+        messages = state["messages"]
+        try:
+            print("--- Invoking LLM ---")
+            response = llm_with_tools.invoke(messages)
+            print(f"DEBUG: LLM Response Type: {type(response)}")
+            print(f"DEBUG: LLM Tool Calls: {response.tool_calls}")
+            if response.content:
+                print(f"DEBUG: LLM Content (Truncated): {str(response.content)[:100]}...")
+        except Exception as e:
+            print(f"ERROR: LLM Invocation Failed: {e}")
+            response = AIMessage(content=f"Error invoking LLM: {str(e)}")
+        iterations = state.get("iterations", 0) + 1
+        return {"messages": [response], "iterations": iterations}
 
-    # If Submit tool was called, we are done
-    for tool_call in last_message.tool_calls:
-        if tool_call["name"] == "submit_final_result":
+    def tool_node_wrapper(state: AgentState):
+        messages = state["messages"]
+        last_message = messages[-1]
+        if not hasattr(last_message, "tool_calls") or not last_message.tool_calls:
+            return {"messages": []}
+
+        tool_calls = last_message.tool_calls
+        print(f"DEBUG: Processing {len(tool_calls)} tool calls...")
+        outputs = []
+        final_code_update = None
+        imports_update = None
+        cases_update = None
+        plan_update = None
+        questions_update = None
+
+        for tool_call in tool_calls:
+            tool_name = tool_call["name"]
+            print(f"DEBUG: Executing Tool: {tool_name}")
+            tool_args = tool_call["args"]
+            result_content = ""
+
+            if tool_name == "submit_final_result":
+                imports_update = tool_args.get("imports_and_setup", "")
+                cases_update = tool_args.get("test_cases", [])
+                questions_update = tool_args.get("interactive_questions", [])
+                result_content = "Submission accepted."
+            elif tool_name == "submit_test_plan":
+                plan_update = tool_args.get("plan_cases", [])
+                questions_update = [tool_args.get("explanation", "Please review the proposed test plan.")]
+                result_content = "Test plan submission accepted."
+            elif tool_name == "run_unit_tests":
+                final_code_update = tool_args.get("test_code")
+                try:
+                    result = run_unit_tests.invoke(tool_args)
+                    result_content = result
+                except Exception as e:
+                    result_content = json.dumps({"passed": False, "error_message": f"Tool execution failed: {str(e)}"})
+            elif tool_name == "analyze_source_code":
+                try:
+                    result = analyze_source_code.invoke(tool_args)
+                    result_content = result
+                except Exception as e:
+                    result_content = f"Analysis failed: {str(e)}"
+            elif tool_name == "read_file":
+                try:
+                    result = read_file.invoke(tool_args)
+                    result_content = result
+                except Exception as e:
+                    result_content = f"Read file failed: {str(e)}"
+            else:
+                result_content = f"Unknown tool: {tool_name}"
+
+            outputs.append(ToolMessage(content=result_content, name=tool_name, tool_call_id=tool_call["id"]))
+
+        update_dict = {"messages": outputs}
+        if final_code_update:
+            update_dict["final_test_code"] = final_code_update
+        if imports_update is not None:
+            update_dict["imports_and_setup"] = imports_update
+        if cases_update is not None:
+            update_dict["test_cases"] = cases_update
+        if plan_update is not None:
+            update_dict["proposed_plan"] = plan_update
+        if questions_update is not None:
+            update_dict["interactive_questions"] = questions_update
+        return update_dict
+
+    def should_continue(state: AgentState):
+        messages = state["messages"]
+        last_message = messages[-1]
+        if not hasattr(last_message, "tool_calls") or not last_message.tool_calls:
             return END
+        if state["iterations"] > 8:
+            return END
+        return "tools"
 
-    # Check for max iterations (Safety break)
-    if state["iterations"] > 8:
-        return END
-        
-    return "tools"
+    def check_test_results(state: AgentState):
+        messages = state["messages"]
+        for msg in reversed(messages):
+            if not isinstance(msg, ToolMessage):
+                break
+            if msg.name in ["submit_final_result", "submit_test_plan"]:
+                return END
+        for msg in reversed(messages):
+            if not isinstance(msg, ToolMessage):
+                break
+            if msg.name == "run_unit_tests":
+                try:
+                    data = json.loads(msg.content)
+                    if data.get("passed") is True:
+                        return END
+                except json.JSONDecodeError:
+                    pass
+                break
+        return "agent"
 
-def check_test_results(state: AgentState):
-    """
-    After tools run, check if tests passed.
-    """
-    messages = state["messages"]
-    # The last messages are ToolMessages added by tool_node_wrapper
-    
-    all_passed = False
-    ran_tests = False
-    
-    # Iterate backwards to find the latest run_unit_tests result
-    for msg in reversed(messages):
-        if isinstance(msg, ToolMessage) and msg.name == "run_unit_tests":
-            ran_tests = True
-            content = msg.content
-            try:
-                data = json.loads(content)
-                if data.get("passed") is True:
-                    all_passed = True
-                else:
-                    all_passed = False # Explicit failure
-            except json.JSONDecodeError:
-                all_passed = False
-            break # Only check the most recent test run
-            
-    if ran_tests and all_passed:
-        return END
-    
-    # If tests failed, or if we only ran analysis, continue back to agent
-    return "agent"
-
-# 4. Compile Graph
-workflow = StateGraph(AgentState)
-
-workflow.add_node("agent", agent_node)
-workflow.add_node("tools", tool_node_wrapper)
-
-workflow.set_entry_point("agent")
-
-workflow.add_conditional_edges(
-    "agent",
-    should_continue,
-    {
-        "tools": "tools",
-        END: END
-    }
-)
-
-workflow.add_conditional_edges(
-    "tools",
-    check_test_results,
-    {
-        "agent": "agent",
-        END: END
-    }
-)
-
-app = workflow.compile()
+    workflow = StateGraph(AgentState)
+    workflow.add_node("agent", agent_node)
+    workflow.add_node("tools", tool_node_wrapper)
+    workflow.set_entry_point("agent")
+    workflow.add_conditional_edges("agent", should_continue, {"tools": "tools", END: END})
+    workflow.add_conditional_edges("tools", check_test_results, {"agent": "agent", END: END})
+    return workflow.compile()

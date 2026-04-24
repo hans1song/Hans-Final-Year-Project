@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IntelliTesting — User Guide</title>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>
+    :root {
+      --bg: #07091a;
+      --surface: rgba(255,255,255,0.03);
+      --border: rgba(255,255,255,0.07);
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --accent: #60a5fa;
+      --code-bg: #0d1117;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      line-height: 1.75;
+      padding: 0 1rem 4rem;
+    }
+
+    /* ── Top bar ── */
+    header {
+      position: sticky;
+      top: 0;
+      background: rgba(7,9,26,0.92);
+      backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--border);
+      padding: 0.9rem 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      z-index: 50;
+    }
+    header a {
+      font-size: 0.85rem;
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+    header a:hover { text-decoration: underline; }
+    .brand {
+      font-size: 1rem;
+      font-weight: 900;
+      background: linear-gradient(135deg, #60a5fa, #a78bfa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    /* ── Content ── */
+    #content {
+      max-width: 780px;
+      margin: 3rem auto 0;
+    }
+
+    #content h1 { font-size: 2rem; font-weight: 800; margin-bottom: 0.5rem; color: #fff; }
+    #content h2 { font-size: 1.35rem; font-weight: 700; margin: 2.5rem 0 0.75rem; color: #fff; padding-bottom: 0.4rem; border-bottom: 1px solid var(--border); }
+    #content h3 { font-size: 1.05rem; font-weight: 600; margin: 1.75rem 0 0.5rem; color: #e2e8f0; }
+    #content h4 { font-size: 0.95rem; font-weight: 600; margin: 1.25rem 0 0.4rem; color: #cbd5e1; }
+
+    #content p  { margin-bottom: 1rem; color: #cbd5e1; }
+    #content li { color: #cbd5e1; margin-bottom: 0.35rem; }
+    #content ul, #content ol { padding-left: 1.5rem; margin-bottom: 1rem; }
+
+    #content a { color: var(--accent); }
+
+    #content code {
+      background: var(--code-bg);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 5px;
+      padding: 0.15em 0.45em;
+      font-family: 'Consolas', 'Fira Code', monospace;
+      font-size: 0.85em;
+      color: #93c5fd;
+    }
+
+    #content pre {
+      background: var(--code-bg);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 10px;
+      padding: 1.25rem;
+      overflow-x: auto;
+      margin-bottom: 1.25rem;
+    }
+    #content pre code {
+      background: none;
+      border: none;
+      padding: 0;
+      color: #e2e8f0;
+      font-size: 0.875rem;
+    }
+
+    #content blockquote {
+      border-left: 3px solid var(--accent);
+      padding: 0.5rem 1rem;
+      margin: 1rem 0;
+      background: rgba(96,165,250,0.06);
+      border-radius: 0 8px 8px 0;
+      color: var(--muted);
+    }
+
+    #content table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 1.25rem;
+      font-size: 0.9rem;
+    }
+    #content th {
+      background: rgba(255,255,255,0.05);
+      text-align: left;
+      padding: 0.6rem 1rem;
+      border-bottom: 1px solid var(--border);
+      color: #fff;
+      font-weight: 600;
+    }
+    #content td {
+      padding: 0.6rem 1rem;
+      border-bottom: 1px solid var(--border);
+      color: #cbd5e1;
+    }
+
+    #content hr {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 2rem 0;
+    }
+
+    /* ── Loading / error states ── */
+    #loading {
+      text-align: center;
+      padding: 4rem 0;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <span class="brand">IntelliTesting</span>
+    <a href="index.html">← Back to Project Page</a>
+  </header>
+
+  <div id="content">
+    <div id="loading">Loading user guide…</div>
+  </div>
+
+  <script>
+    fetch('userguide.md')
+      .then(res => {
+        if (!res.ok) throw new Error('File not found');
+        return res.text();
+      })
+      .then(md => {
+        document.getElementById('content').innerHTML = marked.parse(md);
+      })
+      .catch(() => {
+        document.getElementById('content').innerHTML =
+          '<p style="color:#f87171;padding:2rem 0">Could not load <code>userguide.md</code>. Make sure the file is in the same folder as this page.</p>';
+      });
+  </script>
+</body>
+</html>

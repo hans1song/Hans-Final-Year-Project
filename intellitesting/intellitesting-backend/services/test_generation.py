@@ -1,4 +1,4 @@
-from services.agent_service import app
+from services.agent_service import build_agent_app
 from schemas import SelectionRange
 from langchain_core.messages import HumanMessage, AIMessage
 from core.languages.factory import LanguageFactory
@@ -16,7 +16,8 @@ class TestGenerationService:
         file_path: str = None,
         instruction: str = None,
         specification: str = None,
-        chat_history: list = None
+        chat_history: list = None,
+        api_key: str = None
     ):
         # 1. Get Language Strategy
         source_package = None
@@ -57,14 +58,19 @@ class TestGenerationService:
             behavior_instruction = "- Oracle Mode: Follow the spec strictly. Prioritize spec over code logic."
         else:
             spec_context = "NO SPECIFICATION PROVIDED."
-            behavior_instruction = "- Interactive Mode: Identify ambiguities and ask 2-3 specific questions via `submit_final_result`."
+            behavior_instruction = """
+            - **Interactive Mode**: No specification provided. Your task is to propose a test plan.
+            - **Action**: Call the `submit_test_plan` tool.
+            - **`explanation`**: Briefly summarize the plan.
+            - **`plan_cases`**: Create a comprehensive list of test cases covering happy paths, edge cases, and invalid inputs, based on your analysis of the source code. Each case should be a dictionary with "scenario", "inputs", and "expected_output".
+            - **CRITICAL**: Do NOT call `submit_final_result` or generate any code yet.
+            """
         
         lang_specific_prompt = strategy.get_test_prompt_template()
 
         initial_prompt = f"""
         {lang_specific_prompt}
         GOAL: Generate a comprehensive unit test suite.
-        CRITICAL: Finish by calling `submit_final_result`.
         
         {package_instruction}
         
@@ -94,59 +100,44 @@ class TestGenerationService:
             "framework": framework,
             "iterations": 0,
             "final_test_code": "",
+            "imports_and_setup": "",
+            "test_cases": [],
+            "proposed_plan": [],
             "interactive_questions": []
         }
 
         print("--- Executing Agent ---")
-        final_state = app.invoke(initial_state)
+        agent_app = build_agent_app(api_key)
+        final_state = agent_app.invoke(initial_state)
         
         # --- STRUCTURED EXTRACTION ---
-        messages = final_state.get("messages", [])
-        test_code = ""
-        questions = []
-        explanation = ""
-        
-        for msg in reversed(messages):
-            if isinstance(msg, AIMessage) and msg.tool_calls:
-                for tool_call in msg.tool_calls:
-                    if tool_call["name"] == "submit_final_result":
-                        args = tool_call["args"]
-                        test_code = args.get("test_code", "")
-                        explanation = args.get("explanation", "")
-                        questions = args.get("interactive_questions", [])
-                        break
-                if test_code or questions: break
-        
-        # Fallback
-        if not test_code and not questions:
-            test_code = final_state.get("final_test_code", "")
-            if not test_code and isinstance(messages[-1], AIMessage):
-                test_code = messages[-1].content
+        # Look for code, plan, or questions in the final state
+        imports_and_setup = final_state.get("imports_and_setup", "")
+        test_cases = final_state.get("test_cases", [])
+        proposed_plan_raw = final_state.get("proposed_plan", [])
+        questions = final_state.get("interactive_questions", [])
 
-        # Clean code
-        if test_code:
-            test_code = TestGenerationService._clean_code(test_code)
-            
-            # --- FINAL AGGRESSIVE CLEANUP ---
-            # Remove any line that looks like a path or Python artifact (the "Hallucinations")
-            # This regex targets lines containing @ and file path separators or .pyc/.js extensions
-            test_code = re.sub(r'^.*@.*[\\/].*$\n?', '', test_code, flags=re.MULTILINE)
-            test_code = re.sub(r'^.*__pycache__.*$\n?', '', test_code, flags=re.MULTILINE)
-            test_code = re.sub(r'^.*\.pyc.*$\n?', '', test_code, flags=re.MULTILINE)
-            test_code = re.sub(r'^.*\.js.*$\n?', '', test_code, flags=re.MULTILINE)
+        # Normalize proposed_plan: ensure inputs/expected_output are strings
+        proposed_plan = []
+        for case in proposed_plan_raw:
+            proposed_plan.append({
+                "scenario": str(case.get("scenario", "")),
+                "inputs": str(case.get("inputs", "")),
+                "expected_output": str(case.get("expected_output", ""))
+            })
 
-        # Logic: Should we show code?
+        # Format questions for display
         formatted_questions = None
         if questions:
-            formatted_questions = "### ⚠️ Interactive Check Required\n" + "\n".join([f"- {q}" for q in questions])
-            if not has_context: # Only hide if user hasn't provided context yet
-                test_code = None
-        elif explanation and "interactive" in explanation.lower() and not has_context:
-             formatted_questions = f"### Note\n{explanation}"
-             test_code = None
+            # The first question is often the explanation from the plan tool
+            main_question = f"### {questions[0]}\n"
+            other_questions = "\n".join([f"- {q}" for q in questions[1:]])
+            formatted_questions = main_question + other_questions
 
         return {
-            "test_code": test_code,
+            "imports_and_setup": imports_and_setup,
+            "test_cases": test_cases,
+            "proposed_plan": proposed_plan,
             "suggested_file_path": strategy.get_suggested_test_path(file_path),
             "interactive_questions": formatted_questions
         }

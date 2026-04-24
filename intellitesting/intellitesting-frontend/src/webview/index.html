@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<!-- CSP_PLACEHOLDER -->
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>IntelliTesting Agent</title>
+	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+	<link rel="stylesheet" href="{{styleUri}}">
+</head>
+<body>
+	<div id="chat-container">
+		<div class="message-row assistant">
+			<div class="avatar">⚡</div>
+			<div class="message-content"><strong>IntelliTesting Agent Ready.</strong><br>Select code and I will generate spec-driven tests for you.</div>
+		</div>
+	</div>
+	<div id="input-container">
+		<div id="spec-wrapper">
+			<textarea id="spec-input" rows="4" placeholder="Paste Requirements / Specifications (Oracle)..."></textarea>
+			<div style="display:flex; justify-content:flex-end; margin-top:8px;">
+				<input type="file" id="file-upload" style="display:none" accept=".txt,.md,.json,.java,.py,.ts,.js">
+				<button id="upload-btn" class="tool-btn" title="Upload Document">📎 Upload Spec File</button>
+			</div>
+		</div>
+		<div style="display:flex; align-items:flex-end; gap:12px;">
+			<div style="flex:1; display:flex; flex-direction:column;">
+				<textarea id="instruction-input" rows="1" placeholder="Ask a question or describe test requirements..."></textarea>
+				<div id="toolbar">
+					<button id="toggle-spec-btn" class="tool-btn">➕ Add Specs</button>
+				</div>
+			</div>
+			<button id="send-btn">➤</button>
+		</div>
+	</div>
+	<div id="context-menu" class="context-menu">
+		<div class="context-menu-item" id="cm-run">▶ Run Single Test</div>
+		<div class="context-menu-item" id="cm-approve">✅ Approve</div>
+		<div class="context-menu-item" id="cm-reject">❌ Reject</div>
+		<div class="context-menu-item" id="cm-copy">📋 Copy</div>
+	</div>
+	<script src="{{scriptUri}}"></script>
+</body>
+</html>

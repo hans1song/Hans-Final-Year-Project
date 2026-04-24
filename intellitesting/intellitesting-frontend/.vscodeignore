@@ -2,7 +2,10 @@
 .vscode-test-compile
 
 node_modules/
-out/
-src/
+src/**/*.ts
+src/runners/
+.vscode/
+.env
+.env.*
 
 *.vsix

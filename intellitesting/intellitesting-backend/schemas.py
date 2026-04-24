@@ -1,15 +1,20 @@
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any, List
 
+class TestCase(BaseModel):
+    id: str = Field(description="A unique identifier for the test case, e.g., 'test_balance_exact_20000'.")
+    intent: str = Field(description="A brief explanation of what this test case is verifying and why.")
+    expected_behavior: str = Field(description="The expected behavior or outcome according to the specifications.")
+    code: str = Field(description="The source code for this specific test case method/function.")
+
 class AgentOutput(BaseModel):
     """
     Structured output from the Test Generation Agent.
     """
     explanation: str = Field(description="A brief Markdown explanation of the generated tests and strategy.")
     interactive_questions: Optional[List[str]] = Field(default=[], description="A list of questions for the developer to clarify ambiguities or edge cases.")
-    test_code: str = Field(description="The complete, compilable unit test source code.")
-    # file_path_suggestion is handled by strategy logic, but we can let LLM suggest too if needed.
-    # For now, let's keep path logic deterministic in Python code.
+    imports_and_setup: str = Field(default="", description="The required import statements and any setup/teardown methods or class definitions needed for the tests.")
+    test_cases: List[TestCase] = Field(default=[], description="A list of the generated independent test cases.")
 
 class SelectionRange(BaseModel):
     """Defines the line range of the user's selection."""
@@ -31,14 +36,21 @@ class TestGenerationRequest(BaseModel):
     specification: Optional[str] = None
     chat_history: Optional[List[Dict[str, str]]] = []
 
+class ProposedTestCase(BaseModel):
+    scenario: str = Field(description="The description of the test scenario.")
+    inputs: str = Field(description="A string representation of the inputs for the test case.")
+    expected_output: str = Field(description="A string representation of the expected output.")
+
 class TestGenerationResponse(BaseModel):
     """
     Defines the structure for the outgoing response from the /generate_tests endpoint.
     """
     status: str
-    test_code: Optional[str] = None
+    imports_and_setup: Optional[str] = None
+    test_cases: Optional[List[Dict[str, Any]]] = None
     suggested_file_path: Optional[str] = None
     interactive_questions: Optional[str] = None
+    proposed_plan: Optional[List[ProposedTestCase]] = None
     error_message: Optional[str] = None
 
 class TestExecutionRequest(BaseModel):

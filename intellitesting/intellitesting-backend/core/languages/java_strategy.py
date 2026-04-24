@@ -22,29 +22,51 @@ class JavaStrategy(LanguageStrategy):
 
     def get_test_prompt_template(self) -> str:
         return """
-        You are an expert Java Test Automation Agent using JUnit 4.
+        You are an expert Java Test Automation Agent using JUnit 4. Your goal is to generate a structured test suite.
         
-        KEY GUIDELINES FOR JAVA/JUNIT:
-        1. Class Naming: SourceClass + "Test" (e.g. `CalculatorTest`).
-        2. Package & Imports: 
-           - **CRITICAL**: Strict adherence to the `PROJECT STRUCTURE CONVENTION` provided in the INPUTS section is required.
-           - If told to use a specific package or import, you MUST do so.
-        3. Annotations: 
-           - Use **ONLY** `@Test` for test methods.
-           - **CRITICAL**: Do NOT use file paths (e.g. `@.../ITestRunner.js`) as annotations.
-        4. Structure:
-           ```java
-           // Follow package convention from input
-           
-           import org.junit.Test;
-           import static org.junit.Assert.*;
-           // Follow import convention from input
-           
-           public class CalculatorTest {
-               @Test
-               public void testMethod() { ... }
-           }
-           ```
+        **CRITICAL OUTPUT FORMAT**
+        You MUST call the `submit_final_result` tool with the following structured arguments:
+        1.  `explanation`: A brief summary of your testing strategy.
+        2.  `imports_and_setup`: A single string containing all necessary `import` statements, the `public class ... {` definition, and any `@Before` or `@After` methods. **Do NOT include the closing `}` of the class** — it will be added automatically.
+        3.  `test_cases`: A JSON LIST of test case objects. Each object MUST have these four keys:
+            *   `id`: The Java method name for the test (e.g., "testLoanApproved_WhenBalanceAndCreditScoreAreSufficient").
+            *   `intent`: A short, human-readable sentence explaining what this specific test is verifying.
+            *   `expected_behavior`: A clear statement of the expected outcome based on the requirements (e.g., "The approveLoan method should return true.").
+            *   `code`: A string containing the complete, individual `@Test public void ...` method block.
+        
+        **EXAMPLE of `submit_final_result` call:**
+        ```json
+        {
+          "tool_calls": [
+            {
+              "name": "submit_final_result",
+              "args": {
+                "explanation": "The test suite covers happy paths, boundary conditions for balance and credit score, and invalid negative inputs.",
+                "imports_and_setup": "package com.example.tests;\\n\\nimport com.example.LoanProcessor;\\nimport org.junit.Test;\\nimport static org.junit.Assert.*;\\n\\npublic class LoanProcessorTest {\\n    private LoanProcessor processor = new LoanProcessor();\\n",
+                "test_cases": [
+                  {
+                    "id": "testApproveLoan_HappyPath",
+                    "intent": "To verify that a loan is approved with a high balance and high credit score.",
+                    "expected_behavior": "The method should return true.",
+                    "code": "@Test\\npublic void testApproveLoan_HappyPath() {\\n    assertTrue(processor.approveLoan(50000, 750));\\n}"
+                  },
+                  {
+                    "id": "testApproveLoan_ExactMinimums",
+                    "intent": "To verify the boundary condition where balance and credit score are exactly at the minimum required values.",
+                    "expected_behavior": "The method should return true as the limits are inclusive.",
+                    "code": "@Test\\npublic void testApproveLoan_ExactMinimums() {\\n    assertTrue(processor.approveLoan(20000, 700));\\n}"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+        ```
+        
+        **KEY GUIDELINES FOR JAVA/JUNIT:**
+        - Class Naming: SourceClass + "Test" (e.g. `CalculatorTest`).
+        - Package & Imports: **CRITICAL**: Adhere strictly to the `PROJECT STRUCTURE CONVENTION` provided.
+        - Annotations: Use **ONLY** `@Test` for test methods. Do NOT invent annotations.
         """
 
     def get_suggested_test_path(self, source_file_path: str) -> str:

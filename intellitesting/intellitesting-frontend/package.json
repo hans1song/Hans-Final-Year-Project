@@ -1,8 +1,11 @@
 {
   "name": "intellitesting",
   "displayName": "IntelliTesting",
+  "publisher": "hanssong",
   "description": "AI-driven unit test generation, execution, and validation with a zero-interruption workflow.",
   "version": "0.0.1",
+  "icon": "icon.png",
+  "license": "MIT",
   "engines": {
     "vscode": "^1.83.0"
   },
@@ -12,7 +15,8 @@
     "Other"
   ],
   "activationEvents": [
-    "onCommand:extension.generateUnitTests"
+    "onCommand:extension.generateUnitTests",
+    "onCommand:extension.showTestingChat"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -43,30 +47,18 @@
       ],
       "editor/context": [
         {
-          "when": "editorHasSelection",
-          "submenu": "intellitesting.submenu",
-          "group": "navigation@1"
-        }
-      ],
-      "intellitesting.submenu": [
-        {
           "command": "extension.generateUnitTests",
-          "group": "1_generate"
+          "when": "editorHasSelection",
+          "group": "navigation@1"
         }
       ]
     },
-    "submenus": [
-      {
-        "id": "intellitesting.submenu",
-        "label": "IntelliTesting"
-      }
-    ],
     "configuration": {
       "title": "IntelliTesting",
       "properties": {
         "intellitesting.backendUrl": {
           "type": "string",
-          "default": "http://127.0.0.1:8000",
+          "default": "https://intellitesting-backend-489299415304.europe-west1.run.app",
           "description": "Base URL of the AI backend API (e.g., http://127.0.0.1:8000). The '/generate_tests' path will be appended automatically."
         },
         "intellitesting.testExecutionCommand": {
@@ -83,6 +75,11 @@
           "type": "string",
           "default": "junit",
           "description": "The testing framework to use (e.g., 'pytest', 'jest', 'mocha'). Set to 'auto' for automatic detection."
+        },
+        "intellitesting.geminiApiKey": {
+          "type": "string",
+          "default": "",
+          "description": "Your personal Gemini API key. If provided, requests bypass the daily rate limit. Get one free at https://aistudio.google.com/apikey"
         }
       }
     }
@@ -93,14 +90,10 @@
     "watch": "tsc -watch -p ./",
     "lint": "eslint src --ext ts"
   },
-    "dependencies": {
-        "node-fetch": "^2.6.7"
-    },
     "devDependencies": {
         "@types/vscode": "^1.83.0",
         "@types/mocha": "^10.0.3",
         "@types/node": "18.x",
-        "@types/node-fetch": "^2.6.4",
         "@typescript-eslint/eslint-plugin": "^6.9.0",
         "@typescript-eslint/parser": "^6.9.0",
         "eslint": "^8.52.0",
